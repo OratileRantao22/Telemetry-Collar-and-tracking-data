@@ -550,26 +550,7 @@ tabItem(
       width = 4
     )
 
-  ),
-
-  # -------------------------------------------------------
-  # REDEPLOYMENT RESULTS
-  # -------------------------------------------------------
-
-  fluidRow(
-
-    box(
-      title = "Redeployment Search Results",
-      width = 12,
-      status = "success",
-      solidHeader = TRUE,
-
-      DTOutput(
-        "redeployment_results"
-      )
-    )
-
-  ),
+  ),  
 
   # -------------------------------------------------------
   # ALL COLLAR RECORDS WITH DEPLOYMENT CODE
@@ -1949,56 +1930,6 @@ output$redeployment_not_redeployed <- renderValueBox({
   )
 
 })
-
-
-# ---------------------------------------------------------
-# SEARCH RESULTS
-# ---------------------------------------------------------
-
-output$redeployment_results <- renderDT({
-
-  data <- redeployment_data()
-
-  if (nrow(data) == 0) {
-
-    return(
-      datatable(
-        data.frame(
-          Message =
-            "No collar matching the search was found."
-        ),
-        rownames = FALSE
-      )
-    )
-
-  }
-
-  results <- data %>%
-    select(
-      Deployment.code,
-      SAT.ID,
-      Name.of.individual,
-      Species,
-      Parks,
-      Date.Deployed,
-      Time.Deployed,
-      State,
-      Redeployment.Status
-    )
-
-  datatable(
-    results,
-    rownames = FALSE,
-    filter = "top",
-    options = list(
-      pageLength = 15,
-      scrollX = TRUE,
-      autoWidth = TRUE
-    )
-  )
-
-})
-
 
 # ---------------------------------------------------------
 # COMPLETE DEPLOYMENT REGISTER
