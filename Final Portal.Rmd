@@ -55,7 +55,7 @@ class(collars$Date.Deployed)
 ```
 
 
-
+ 
 
 ```{r}
 
@@ -231,8 +231,9 @@ ui <- dashboardPage(
       
       
      
-      # PAGE 3 - COLLAR ACTIVITY
-    
+  
+# PAGE 3 - COLLAR ACTIVITY
+
 
 tabItem(
 
@@ -250,8 +251,11 @@ tabItem(
     box(
 
       title = "Activity Filters",
+
       width = 12,
+
       status = "primary",
+
       solidHeader = TRUE,
 
       fluidRow(
@@ -407,7 +411,7 @@ tabItem(
 
       title = "Collars Deployed Within Selected Period",
 
-      width = 7,
+      width = 10,
 
       status = "success",
 
@@ -448,31 +452,6 @@ tabItem(
 
 
   # =======================================================
-  # COLLARS WITH UNKNOWN END DATE
-  # =======================================================
-
-  fluidRow(
-
-    box(
-
-      title = "Collars With Unknown End Date",
-
-      width = 10,
-
-      status = "warning",
-
-      solidHeader = TRUE,
-
-      DTOutput(
-        "unknown_end_table"
-      )
-
-    )
-
-  ),
-
-
-  # =======================================================
   # MONTHLY COLLAR ACTIVITY
   # =======================================================
 
@@ -498,8 +477,6 @@ tabItem(
   )
 
 ),
-
-
 # PAGE 4- Redeployment register
 
 tabItem(
@@ -559,7 +536,7 @@ tabItem(
   fluidRow(
 
     box(
-      title = "Collar Deployment Register",
+      title = "Collar Redeployment Register",
       width = 12,
       status = "primary",
       solidHeader = TRUE,
@@ -1097,9 +1074,7 @@ server <- function(input, output, session) {
   
  # ==============================
 # PAGE 3 - COLLAR ACTIVITY
-# ==============================
-
-
+# =============================
 # =========================================================
 # UPDATE PARK DROPDOWN
 # =========================================================
@@ -1158,11 +1133,18 @@ activity_data <- reactive({
 
   req(input$activity_dates)
 
+  start_date <- input$activity_dates[1]
+  end_date   <- input$activity_dates[2]
+
+
   data <- collars %>%
 
     filter(
+
       !is.na(Date.Deployed),
-      Date.Deployed <= input$activity_dates[2]
+
+      Date.Deployed <= end_date
+
     )
 
 
@@ -1171,13 +1153,19 @@ activity_data <- reactive({
   # -------------------------------------------------------
 
   if (
+
     !is.null(input$activity_park) &&
+
     input$activity_park != "All Parks"
+
   ) {
 
     data <- data %>%
+
       filter(
+
         Parks == input$activity_park
+
       )
 
   }
@@ -1188,13 +1176,19 @@ activity_data <- reactive({
   # -------------------------------------------------------
 
   if (
+
     !is.null(input$activity_species) &&
+
     input$activity_species != "All Species"
+
   ) {
 
     data <- data %>%
+
       filter(
+
         Species == input$activity_species
+
       )
 
   }
@@ -1206,75 +1200,84 @@ activity_data <- reactive({
 
 
 # =========================================================
-# NEWLY DEPLOYED COLLARS
-# =========================================================
-
-newly_deployed <- reactive({
-
-  req(input$activity_dates)
-
-  activity_data() %>%
-
-    filter(
-
-      Date.Deployed >= input$activity_dates[1],
-
-      Date.Deployed <= input$activity_dates[2]
-
-    )
-
-})
-
-
-# =========================================================
-# RECORDED DEPLOYMENTS OVERLAPPING SELECTED PERIOD
-# =========================================================
-
-active_during_period <- reactive({
-
-  req(input$activity_dates)
-
-  activity_data() %>%
-
-    filter(
-
-      Date.Deployed <= input$activity_dates[2],
-
-      is.na(Date.Deactivated) |
-        Date.Deactivated >= input$activity_dates[1]
-
-    )
-
-})
-
-
-# =========================================================
 # COLLARS DEPLOYED WITHIN SELECTED PERIOD
+#
+# Criteria:
+#
+# 1. Date deployed is within selected period
+#
+# AND
+#
+# 2. Collar is either:
+#    - currently Active
+#    OR
+#    - deactivated within selected period
 # =========================================================
 
 deployed_within_period <- reactive({
 
   req(input$activity_dates)
 
+  start_date <- input$activity_dates[1]
+
+  end_date <- input$activity_dates[2]
+
+
   activity_data() %>%
 
     filter(
 
-      Date.Deployed >= input$activity_dates[1],
+      # Collar was deployed during selected period
 
-      Date.Deployed <= input$activity_dates[2]
+      Date.Deployed >= start_date,
+
+      Date.Deployed <= end_date,
+
+
+      # -----------------------------------------------
+      # Either still active
+      # OR deactivated during selected period
+      # -----------------------------------------------
+
+      (
+
+        tolower(trimws(State)) == "active"
+
+        |
+
+        (
+
+          !is.na(Date.Deactivated) &
+
+          Date.Deactivated >= start_date &
+
+          Date.Deactivated <= end_date
+
+        )
+
+      )
 
     ) %>%
 
     mutate(
 
-      Status = ifelse(
+      Status = case_when(
 
-        is.na(Date.Deactivated),
+        tolower(trimws(State)) == "active" ~
 
-        "End date unknown",
+          "Active",
 
-        "Deactivated date recorded"
+        !is.na(Date.Deactivated) &
+
+          Date.Deactivated >= start_date &
+
+          Date.Deactivated <= end_date ~
+
+          "Deactivated During Selected Period",
+
+        TRUE ~
+
+          "Other"
 
       )
 
@@ -1285,32 +1288,148 @@ deployed_within_period <- reactive({
 
 # =========================================================
 # COLLARS OVERLAPPING SELECTED PERIOD
+#
+# ONLY THREE TYPES ARE INCLUDED:
+#
+# 1. Deployed BEFORE selected period
+#    AND deactivated DURING selected period
+#
+# 2. Deployed DURING selected period
+#    AND deactivated AFTER selected period
+#
+# 3. Deployed DURING selected period
+#    AND deactivation date is UNKNOWN
+#
+# IMPORTANT:
+# Deployed during period + Active
+# is NOT included here.
 # =========================================================
 
 overlapping_period <- reactive({
 
   req(input$activity_dates)
 
+  start_date <- input$activity_dates[1]
+
+  end_date <- input$activity_dates[2]
+
+
   activity_data() %>%
 
     filter(
 
-      Date.Deployed <= input$activity_dates[2],
+      (
 
-      is.na(Date.Deactivated) |
-        Date.Deactivated >= input$activity_dates[1]
+        # ------------------------------------------------
+        # CASE 1
+        # Deployed BEFORE selected period
+        # AND deactivated DURING selected period
+        # ------------------------------------------------
+
+        (
+
+          Date.Deployed < start_date &
+
+          !is.na(Date.Deactivated) &
+
+          Date.Deactivated >= start_date &
+
+          Date.Deactivated <= end_date
+
+        )
+
+        |
+
+        # ------------------------------------------------
+        # CASE 2
+        # Deployed DURING selected period
+        # AND deactivated AFTER selected period
+        # ------------------------------------------------
+
+        (
+
+          Date.Deployed >= start_date &
+
+          Date.Deployed <= end_date &
+
+          !is.na(Date.Deactivated) &
+
+          Date.Deactivated > end_date
+
+        )
+
+        |
+
+        # ------------------------------------------------
+        # CASE 3
+        # Deployed DURING selected period
+        # AND deactivation date UNKNOWN
+        # ------------------------------------------------
+
+        (
+
+          Date.Deployed >= start_date &
+
+          Date.Deployed <= end_date &
+
+          is.na(Date.Deactivated)
+
+        )
+
+      )
 
     ) %>%
 
     mutate(
 
-      Status = ifelse(
+      Status = case_when(
 
-        is.na(Date.Deactivated),
+        # ------------------------------------------------
+        # Status for CASE 1
+        # ------------------------------------------------
 
-        "End date unknown",
+        Date.Deployed < start_date &
 
-        "Overlaps selected period"
+          !is.na(Date.Deactivated) &
+
+          Date.Deactivated >= start_date &
+
+          Date.Deactivated <= end_date ~
+
+          "Deactivated During Selected Period",
+
+
+        # ------------------------------------------------
+        # Status for CASE 2
+        # ------------------------------------------------
+
+        Date.Deployed >= start_date &
+
+          Date.Deployed <= end_date &
+
+          !is.na(Date.Deactivated) &
+
+          Date.Deactivated > end_date ~
+
+          "Deactivated After Selected Period",
+
+
+        # ------------------------------------------------
+        # Status for CASE 3
+        # ------------------------------------------------
+
+        Date.Deployed >= start_date &
+
+          Date.Deployed <= end_date &
+
+          is.na(Date.Deactivated) ~
+
+          "End Date Unknown",
+
+
+        TRUE ~
+
+          "Other"
 
       )
 
@@ -1320,34 +1439,7 @@ overlapping_period <- reactive({
 
 
 # =========================================================
-# COLLARS WITH UNKNOWN END DATE
-# =========================================================
-
-unknown_end_date <- reactive({
-
-  req(input$activity_dates)
-
-  activity_data() %>%
-
-    filter(
-
-      Date.Deployed <= input$activity_dates[2],
-
-      is.na(Date.Deactivated)
-
-    ) %>%
-
-    mutate(
-
-      Status = "End date unknown"
-
-    )
-
-})
-
-
-# =========================================================
-# VALUE BOX - NEWLY DEPLOYED
+# VALUE BOX - DEPLOYED WITHIN PERIOD
 # =========================================================
 
 output$activity_new <- renderValueBox({
@@ -1355,10 +1447,10 @@ output$activity_new <- renderValueBox({
   valueBox(
 
     value = nrow(
-      newly_deployed()
+      deployed_within_period()
     ),
 
-    subtitle = "Newly Deployed During Period",
+    subtitle = "Deployed Within Selected Period",
 
     icon = icon("plus"),
 
@@ -1370,7 +1462,7 @@ output$activity_new <- renderValueBox({
 
 
 # =========================================================
-# VALUE BOX - OVERLAPPING
+# VALUE BOX - OVERLAPPING PERIOD
 # =========================================================
 
 output$activity_active <- renderValueBox({
@@ -1378,12 +1470,12 @@ output$activity_active <- renderValueBox({
   valueBox(
 
     value = nrow(
-      active_during_period()
+      overlapping_period()
     ),
 
-    subtitle = "Recorded Deployments Overlapping Period",
+    subtitle = "Overlapping Selected Period",
 
-    icon = icon("check"),
+    icon = icon("clock"),
 
     color = "blue"
 
@@ -1447,38 +1539,101 @@ output$activity_table <- renderDT({
 
     summarise(
 
-      `Newly Deployed` = sum(
+      # ---------------------------------------------------
+      # DEPLOYED WITHIN SELECTED PERIOD
+      # ---------------------------------------------------
+
+      `Deployed Within Period` = sum(
 
         Date.Deployed >= input$activity_dates[1] &
-
-        Date.Deployed <= input$activity_dates[2],
-
-        na.rm = TRUE
-
-      ),
-
-      `Recorded Deployments Overlapping Period` = sum(
 
         Date.Deployed <= input$activity_dates[2] &
 
         (
-          is.na(Date.Deactivated) |
-          Date.Deactivated >= input$activity_dates[1]
+
+          tolower(trimws(State)) == "active"
+
+          |
+
+          (
+
+            !is.na(Date.Deactivated) &
+
+            Date.Deactivated >= input$activity_dates[1] &
+
+            Date.Deactivated <= input$activity_dates[2]
+
+          )
+
         ),
 
         na.rm = TRUE
 
       ),
 
-      `End Date Unknown` = sum(
 
-        Date.Deployed <= input$activity_dates[2] &
+      # ---------------------------------------------------
+      # OVERLAPPING SELECTED PERIOD
+      # ---------------------------------------------------
 
-        is.na(Date.Deactivated),
+      `Overlapping Period` = sum(
+
+        (
+
+          # Deployed before + deactivated during
+
+          (
+
+            Date.Deployed < input$activity_dates[1] &
+
+            !is.na(Date.Deactivated) &
+
+            Date.Deactivated >= input$activity_dates[1] &
+
+            Date.Deactivated <= input$activity_dates[2]
+
+          )
+
+          |
+
+          # Deployed during + deactivated after
+
+          (
+
+            Date.Deployed >= input$activity_dates[1] &
+
+            Date.Deployed <= input$activity_dates[2] &
+
+            !is.na(Date.Deactivated) &
+
+            Date.Deactivated > input$activity_dates[2]
+
+          )
+
+          |
+
+          # Deployed during + unknown end date
+
+          (
+
+            Date.Deployed >= input$activity_dates[1] &
+
+            Date.Deployed <= input$activity_dates[2] &
+
+            is.na(Date.Deactivated)
+
+          )
+
+        ),
 
         na.rm = TRUE
 
       ),
+
+
+      # ---------------------------------------------------
+      # TOTAL RECORDS
+      # ---------------------------------------------------
 
       `Total Records` = n(),
 
@@ -1509,7 +1664,7 @@ output$activity_table <- renderDT({
 
 
 # =========================================================
-# TABLE 1 - DEPLOYED WITHIN PERIOD
+# TABLE 1 - DEPLOYED WITHIN SELECTED PERIOD
 # =========================================================
 
 output$deployed_within_table <- renderDT({
@@ -1529,9 +1684,9 @@ output$deployed_within_table <- renderDT({
       Brand,
 
       Date.Deployed,
-      
+
       State,
-      
+
       Date.Deactivated,
 
       Status
@@ -1561,7 +1716,7 @@ output$deployed_within_table <- renderDT({
 
 
 # =========================================================
-# TABLE 2 - OVERLAPPING PERIOD
+# TABLE 2 - OVERLAPPING SELECTED PERIOD
 # =========================================================
 
 output$overlapping_table <- renderDT({
@@ -1581,59 +1736,7 @@ output$overlapping_table <- renderDT({
       Brand,
 
       Date.Deployed,
-      
-      State,
 
-      Date.Deactivated,
-
-      Status
-
-    )
-
-
-  datatable(
-
-    data,
-
-    rownames = FALSE,
-
-    options = list(
-
-      pageLength = 15,
-
-      scrollX = TRUE,
-
-      autoWidth = TRUE
-
-    )
-
-  )
-
-})
-
-
-# =========================================================
-# TABLE 3 - UNKNOWN END DATE
-# =========================================================
-
-output$unknown_end_table <- renderDT({
-
-  data <- unknown_end_date() %>%
-
-    select(
-
-      SAT.ID,
-
-      Name.of.individual,
-
-      Species,
-
-      Parks,
-
-      Brand,
-
-      Date.Deployed,
-      
       State,
 
       Date.Deactivated,
@@ -1673,7 +1776,7 @@ output$monthly_activity <- renderPlot({
   req(input$activity_dates)
 
 
-  data <- newly_deployed()
+  data <- deployed_within_period()
 
 
   validate(
@@ -1682,7 +1785,7 @@ output$monthly_activity <- renderPlot({
 
       nrow(data) > 0,
 
-      "No collars were newly deployed during the selected period."
+      "No collars were deployed during the selected period."
 
     )
 
@@ -1694,8 +1797,11 @@ output$monthly_activity <- renderPlot({
     mutate(
 
       Month = floor_date(
+
         Date.Deployed,
+
         unit = "month"
+
       )
 
     ) %>%
@@ -1780,6 +1886,7 @@ output$monthly_activity <- renderPlot({
     )
 
 })
+
 
 # PAGE 4-Redeployment register
 
